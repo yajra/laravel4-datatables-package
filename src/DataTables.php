@@ -2,12 +2,13 @@
 
 namespace Yajra\DataTables;
 
-use Illuminate\Support\Traits\Macroable;
+use Exception;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Str;
+use Illuminate\Support\Collection;
 
 class DataTables
 {
-    use Macroable;
-
     /**
      * DataTables request object.
      *
@@ -30,9 +31,9 @@ class DataTables
      * @return mixed
      * @throws \Exception
      */
-    public static function of($source)
+    public function of($source)
     {
-        return self::make($source);
+        return $this->make($source);
     }
 
     /**
@@ -42,25 +43,56 @@ class DataTables
      * @return mixed
      * @throws \Exception
      */
-    public static function make($source)
+    public function make($source)
     {
-        $engines  = config('datatables.engines');
-        $builders = config('datatables.builders');
+        if (is_array($source)) {
+            $source = new Collection($source);
+        }
 
-        $args = func_get_args();
-        foreach ($builders as $class => $engine) {
-            if ($source instanceof $class) {
-                return call_user_func_array([$engines[$engine], 'create'], $args);
+        if ($engine = $this->getEngineForSource($source)) {
+            return $this->createDataTable($engine, $source);
+        }
+
+        throw new Exception('No available engine for ' . get_class($source));
+    }
+
+    /**
+     * Get the optimum engine for the given data source.
+     *
+     * @param  mixed  $source
+     * @return string|null
+     */
+    protected function getEngineForSource($source)
+    {
+        $result = null;
+
+        foreach (config('datatables.builders') as $type => $engine) {
+            if ($source instanceof $type) {
+                if (! isset($tmpType) || is_subclass_of($type, $tmpType)) {
+                    $tmpType = $type;
+                    $result  = $engine;
+                }
             }
         }
 
-        foreach ($engines as $engine => $class) {
-            if (call_user_func_array([$engines[$engine], 'canCreate'], $args)) {
-                return call_user_func_array([$engines[$engine], 'create'], $args);
-            }
+        return $result;
+    }
+
+    /**
+     * Create a new DataTable instance.
+     *
+     * @param  string  $engine
+     * @param  mixed  $source
+     * @return mixed
+     * @throws \Exception
+     */
+    protected function createDataTable($engine, $source)
+    {
+        if ($class = class_exists($engine) ? $engine : Arr::get(config('datatables.engines'), $engine)) {
+            return new $class($source);
         }
 
-        throw new \Exception('No available engine for ' . get_class($source));
+        throw new Exception("Unsupported DataTable engine [$engine]");
     }
 
     /**
@@ -94,39 +126,6 @@ class DataTables
     }
 
     /**
-     * DataTables using Query.
-     *
-     * @param \Illuminate\Database\Query\Builder|mixed $builder
-     * @return DataTableAbstract|QueryDataTable
-     */
-    public function query($builder)
-    {
-        return QueryDataTable::create($builder);
-    }
-
-    /**
-     * DataTables using Eloquent Builder.
-     *
-     * @param \Illuminate\Database\Eloquent\Builder|mixed $builder
-     * @return DataTableAbstract|EloquentDataTable
-     */
-    public function eloquent($builder)
-    {
-        return EloquentDataTable::create($builder);
-    }
-
-    /**
-     * DataTables using Collection.
-     *
-     * @param \Illuminate\Support\Collection|array $collection
-     * @return DataTableAbstract|CollectionDataTable
-     */
-    public function collection($collection)
-    {
-        return CollectionDataTable::create($collection);
-    }
-
-    /**
      * Get html builder instance.
      *
      * @return \Yajra\DataTables\Html\Builder
@@ -139,5 +138,17 @@ class DataTables
         }
 
         return $this->html ?: $this->html = app('datatables.html');
+    }
+
+    /**
+     * Make a DataTable instance by using method name as engine.
+     *
+     * @param  string  $method
+     * @param  array  $parameters
+     * @return mixed
+     */
+    public function __call($method, $parameters)
+    {
+        return $this->createDataTable(Str::snake($method), ...$parameters);
     }
 }
