@@ -639,6 +639,10 @@ class QueryDataTable extends DataTableAbstract
             ->each(function ($orderable) {
                 $column = $this->resolveRelationColumn($orderable['name']);
 
+                if (str_contains($column, '.')) {
+                    $this->applySelects([$column]);
+                }
+
                 if ($this->hasOrderColumn($column)) {
                     $this->applyOrderColumn($column, $orderable);
                 } else {
@@ -648,6 +652,29 @@ class QueryDataTable extends DataTableAbstract
                     $this->query->orderByRaw($sql);
                 }
             });
+    }
+
+    /**
+     * Apply selects to query.
+     *
+     * @param array $selects
+     */
+    public function applySelects(array $selects)
+    {
+        $selects = array_merge(
+            [$this->query->getModel()->getTable() . '.*'],
+            $selects
+        );
+
+        $columns = $this->query->getQuery()->columns ?? [];
+
+        $this->query->addSelect(
+            collect($selects)
+                ->unique()
+                ->reject(function ($select) use ($columns) {
+                    return in_array($select, $columns);
+                })->toArray()
+        );
     }
 
     /**
