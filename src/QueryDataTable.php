@@ -180,8 +180,6 @@ class QueryDataTable extends DataTableAbstract
     public function totalCount()
     {
         if ($this->skipTotalRecords) {
-            $this->isFilterApplied = true;
-
             return 1;
         }
 
